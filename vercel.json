@@ -11,7 +11,5 @@
       "src": "/(.*)",
       "dest": "src/index.ts"
     }
-  ],
-  "installCommand": "npm install",
-  "buildCommand": "npx prisma generate"
+  ]
 }
