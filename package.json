@@ -15,6 +15,7 @@
   "type": "commonjs",
   "dependencies": {
     "@prisma/client": "^6.19.1",
+    "@vercel/node": "^5.5.28",
     "bcrypt": "^6.0.0",
     "body-parser": "^2.2.2",
     "cors": "^2.8.5",
