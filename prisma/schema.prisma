@@ -1,0 +1,330 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// 1. SYSTEM, BILLING & CONFIG (SUPERADMIN)
+// ==========================================
+
+model PriceConfig {
+  id           Int      @id @default(autoincrement())
+  pricePerUser Decimal  @default(15000)
+  currency     String   @default("IDR")
+  isActive     Boolean  @default(true)
+  updatedAt    DateTime @updatedAt
+  
+  @@map("price_configs")
+}
+
+model Company {
+  id                Int                @id @default(autoincrement())
+  name              String
+  code              String             @unique
+  email             String?
+  phone             String?
+  address           String?            @db.Text
+  
+  image             String?            @db.LongText 
+  
+  // Geofencing Config
+  latitude          Float?             @default(-6.175392)
+  longitude         Float?             @default(106.827153)
+  radiusKm          Float              @default(0.1)
+  workingType       String             @default("WFO") 
+  
+  // 🔥 PERBAIKAN BILLING: Tambah expiredAt & perbaiki default status
+  status            String             @default("TRIAL") // TRIAL, ACTIVE, EXPIRED, PAST_DUE
+  isTrial           Boolean            @default(true)
+  expiredAt         DateTime?          // 🔥 Nyawa akun: Jika Now > expiredAt, maka kunci akses
+  
+  // Field lama yang tetap dipertahankan
+  trialEndsAt       DateTime?          
+  lastBillingDate   DateTime?          
+  isActive          Boolean            @default(true) 
+  customDiscount    Float              @default(0) 
+  
+  // Relations
+  users              User[]
+  transactions       Transaction[]
+  departments        Department[] 
+  shifts             Shift[]        
+  documentTemplates  DocumentTemplate[]
+  calendarEvents     CalendarEvent[]
+  eventCategories    EventCategory[]
+  salarySetting      SalarySetting? 
+  payrolls           Payroll[]      
+  
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@map("companies")
+}
+
+model Transaction {
+  id            String    @id @default(uuid())
+  companyId     Int
+  company       Company   @relation(fields: [companyId], references: [id])
+  
+  // Detail Tagihan
+  amount        Decimal   // Total bayar setelah diskon
+  totalUser     Int       // Jumlah user aktif saat invoice dibuat
+  basePrice     Decimal   // Harga per user saat transaksi
+  discount      Decimal   @default(0)
+  
+  // Status & Payment Gateway
+  status        String    @default("PENDING") // PENDING, PAID, EXPIRED, CANCELLED
+  paymentUrl    String?   @db.Text
+  externalId    String?   @unique             // Xendit/Midtrans Transaction ID
+  description   String?
+  
+  paidAt        DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("transactions")
+}
+
+// ==========================================
+// 2. USER & EMPLOYEE DATA
+// ==========================================
+
+model User {
+  id                  Int            @id @default(autoincrement())
+  email               String         @unique 
+  employeeId          String?        @unique
+  password            String?
+  name                String?
+  role                String         @default("USER") // ADMIN, SUPERADMIN, USER
+  phone               String?
+  bio                 String?        @db.Text
+  address             String?        @db.Text
+  image               String?        @db.LongText 
+  position            String?
+  
+  // Structure Relations
+  departmentId        Int?
+  department          Department?    @relation(fields: [departmentId], references: [id])
+  shiftId             Int?
+  shift               Shift?         @relation(fields: [shiftId], references: [id])
+  companyId           Int?
+  company             Company?       @relation(fields: [companyId], references: [id])
+
+  // Logs & Features (Cascade diaktifkan agar tidak ada data ghaib)
+  activities          ActivityLog[]
+  attendances         Attendance[]   @relation(name: "UserAttendances")
+  leaveRequests       LeaveRequest[] 
+  payrolls            Payroll[]      
+  employeeSalary      EmployeeSalary? 
+
+  // Auth Extras
+  googleId            String?        @unique
+  mustChangePassword  Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@map("users")
+}
+
+// ==========================================
+// 3. ORGANIZATION STRUCTURE
+// ==========================================
+
+model Department {
+  id        Int      @id @default(autoincrement())
+  name      String   
+  color     String   @default("#19A0FA") 
+  companyId Int
+  company   Company  @relation(fields: [companyId], references: [id])
+  users     User[]   
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("departments")
+}
+
+model Shift {
+  id                      Int      @id @default(autoincrement())
+  name                    String   
+  clockIn                 String   
+  clockOut                String   
+  lateToleranceMinutes    Int      @default(30)
+  absentThresholdMinutes  Int      @default(60)
+  companyId               Int
+  company                 Company  @relation(fields: [companyId], references: [id])
+  users                   User[]   
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@map("shifts")
+}
+
+// ==========================================
+// 4. CORE FEATURES (Attendance & Leave)
+// ==========================================
+
+model Attendance {
+  id            Int       @id @default(autoincrement())
+  userId        Int
+  user          User      @relation(name: "UserAttendances", fields: [userId], references: [id], onDelete: Cascade)
+  date          DateTime  @db.Date              
+  clockIn       DateTime                         
+  clockOut      DateTime?                        
+  latIn         String?
+  longIn        String?
+  latOut        String?
+  longOut       String?
+  status        String    @default("PRESENT") // PRESENT, LATE, ABSENT
+  type          String    @default("WFO")     // WFO, WFA
+  notes         String?   @db.Text
+  imageClockIn  String?   @db.LongText
+  imageClockOut String?   @db.LongText
+  address       String?   @db.Text      
+  distance      Float?                  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("attendances")
+}
+
+model LeaveRequest {
+  id              Int      @id @default(autoincrement())
+  userId          Int
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            String    // ANNUAL, SICK, PERMIT
+  startDate       DateTime @db.Date
+  endDate         DateTime @db.Date
+  days            Int      @default(1)
+  reason          String   @db.Text
+  status          String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  rejectedReason  String?  @db.Text
+  attachment      String?  @db.Text
+  proofImage      String?  @db.LongText 
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("leave_requests")
+}
+
+// ==========================================
+// 5. PAYROLL & SALARY ENGINE
+// ==========================================
+
+model SalarySetting {
+  id                  Int      @id @default(autoincrement())
+  companyId           Int      @unique
+  company             Company  @relation(fields: [companyId], references: [id])
+  overtimeRate        Decimal  @default(0) 
+  latePenalty         Decimal  @default(0) 
+  alphaPenalty        Decimal  @default(0) 
+  transportAllowance  Decimal  @default(0) 
+  mealAllowance       Decimal  @default(0) 
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("salary_settings")
+}
+
+model EmployeeSalary {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  basicSalary     Decimal  @default(0) 
+  fixedAllowance  Decimal  @default(0)
+  bankName        String?
+  bankAccount     String?
+  accountHolder   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("employee_salaries")
+}
+
+model Payroll {
+  id              Int      @id @default(autoincrement())
+  userId          Int
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId       Int      
+  company         Company  @relation(fields: [companyId], references: [id])
+  month           String   
+  basicSalary     Decimal  
+  totalAllowance  Decimal  
+  totalDeduction  Decimal  
+  netSalary       Decimal  
+  attendanceDays  Int      @default(0) 
+  overtimeHours   Int      @default(0) 
+  lateCount       Int      @default(0) 
+  details         Json?   
+  status          String    @default("PENDING") 
+  paymentDate     DateTime? 
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("payrolls")
+}
+
+// ==========================================
+// 6. DOKUMEN & SCHEDULE
+// ==========================================
+
+model DocumentTemplate {
+  id          Int      @id @default(autoincrement())
+  title       String   
+  description String?   
+  fileUrl     String   @db.LongText 
+  category    String   @default("GENERAL")
+  companyId   Int
+  company     Company  @relation(fields: [companyId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("document_templates")
+}
+
+model CalendarEvent {
+  id          Int      @id @default(autoincrement())
+  title       String   
+  description String?
+  start       DateTime 
+  end         DateTime 
+  type        String   @default("EVENT")
+  color       String   @default("blue")  
+  categoryId  Int?
+  category    EventCategory? @relation(fields: [categoryId], references: [id])
+  companyId   Int
+  company     Company  @relation(fields: [companyId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("calendar_events")
+}
+
+model EventCategory {
+  id        Int             @id @default(autoincrement())
+  companyId Int
+  name      String          
+  color     String          
+  company   Company         @relation(fields: [companyId], references: [id])
+  events    CalendarEvent[] 
+  @@unique([name, companyId])
+  @@map("event_categories")
+}
+
+// ==========================================
+// 7. LOGS
+// ==========================================
+
+model ActivityLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+
+  @@map("activity_logs")
+}
