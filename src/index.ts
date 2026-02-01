@@ -22,7 +22,7 @@ import superadminRoutes from "./routes/superadmin.route";
 import billingRoutes from "./routes/billing.route";
 import transactionRoutes from "./routes/transaction.route";
 
-// 👇 1. IMPORT UTILS CRON
+// IMPORT UTILS CRON
 import './utils/cron'; 
 
 dotenv.config();
@@ -48,7 +48,7 @@ app.use("/api/calendar", calendarRoute);
 app.use("/api/leaves", leaveRoutes);
 app.use("/api/letters", letterRoutes);
 app.use("/api/salary", salaryRoutes);
-app.use("/api/payroll", payrollRoutes); // Duplikasi dihapus
+app.use("/api/payroll", payrollRoutes); 
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/superadmin", superadminRoutes);
@@ -61,7 +61,13 @@ app.get('/', (req, res) => {
   res.send('Server HRIS Workify Berjalan! 🚀');
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-  console.log(`Cron Job Automatic Billing: Active ✅`);
-});
+// 👇 KUNCI UNTUK VERCEL: Export aplikasi express kamu
+export default app;
+
+// Jalankan server lokal hanya jika bukan di lingkungan production (Vercel)
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Cron Job Automatic Billing: Active ✅`);
+  });
+}
